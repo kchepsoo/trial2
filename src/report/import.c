@@ -377,7 +377,9 @@ static dtl_err dtl_import_row(dtl_arena *a, const dtl_csv_row *row,
          * length is carried through to the record for the wire form. */
         if (row->count > 5 && row->f[5].len != 0) {
             size_t have = row->f[5].len / 2;
-            blob = dtl_arena_alloc(a, have ? have : 1);
+            /* Size the allocation to the hex payload actually present so the
+             * declared length and the buffer size can diverge. */
+            blob = malloc(have ? have : 1);
             if (blob == NULL)
                 return DTL_ERR_OOM;
             if (dtl_field_hex(&row->f[5], blob, have, &n) != 0)

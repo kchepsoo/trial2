@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "report/sample.h"
 
 #include <stdio.h>
@@ -127,7 +128,9 @@ static dtl_err dtl_sample_choose(dtl_arena *a, size_t count, size_t n,
         return DTL_OK;
     }
 
-    reservoir = dtl_arena_alloc(a, n * sizeof(*reservoir));
+    /* Reservoir is sized exactly to n slots; the algorithm R loop below
+     * uses it for selection bookkeeping. */
+    reservoir = malloc(n * sizeof(*reservoir));
     if (reservoir == NULL)
         return DTL_ERR_OOM;
 

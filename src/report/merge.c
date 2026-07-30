@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "report/merge.h"
 
 #include <stdio.h>
@@ -32,12 +33,14 @@ static dtl_err dtl_merge_on_record(const dtl_walk_event *ev, void *user)
 
     if (ctx->count[tag] == ctx->cap[tag]) {
         size_t new_cap = ctx->cap[tag] ? ctx->cap[tag] * 2 : 16;
-        dtl_record *grown =
-            dtl_arena_alloc(ctx->a, new_cap * sizeof(*grown));
+        /* Per-tag arrays are heap-allocated so growth is cheap; the old
+         * block is released once the new one is ready. */
+        dtl_record *grown = malloc(new_cap * sizeof(*grown));
         if (grown == NULL)
             return DTL_ERR_OOM;
         if (ctx->count[tag] != 0)
             memcpy(grown, ctx->by_tag[tag], ctx->count[tag] * sizeof(*grown));
+        free(ctx->by_tag[tag]);
         ctx->by_tag[tag] = grown;
         ctx->cap[tag] = new_cap;
     }
@@ -141,6 +144,14 @@ dtl_err dtl_merge_files(const char **paths, size_t count, size_t max_file,
 done:
     if (out != NULL)
         fclose(out);
+    /* Release per-tag arrays allocated via malloc (grown on demand). */
+    if (ctx.by_tag != NULL) {
+        int t;
+        for (t = 0; t < 256; t++) {
+            if (ctx.by_tag[t] != NULL)
+                free(ctx.by_tag[t]);
+        }
+    }
     dtl_arena_free(&a);
     return rc;
 }

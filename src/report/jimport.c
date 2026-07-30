@@ -492,7 +492,9 @@ static dtl_err dtl_jimport_record(dtl_arena *a, const dtl_json_node *obj,
         /* The record stores the sample count in a byte; size the buffer to
          * what the record will report so the wire form and the array agree. */
         scount = (uint8_t)arr->u.arr.count;
-        samples = dtl_arena_alloc(a, (scount ? scount : 1) * sizeof(float));
+        /* Allocate exactly as many floats as the record will report so the
+         * array length and the wire count field agree. */
+        samples = malloc((scount ? scount : 1) * sizeof(float));
         if (samples == NULL)
             return DTL_ERR_OOM;
         for (i = 0; i < arr->u.arr.count; i++) {
@@ -612,7 +614,8 @@ static dtl_err dtl_jimport_record(dtl_arena *a, const dtl_json_node *obj,
         /* The record carries the pair count in a byte; allocate to match so
          * the array and the reported count use the same width. */
         pcount = (uint8_t)pairs_obj->u.obj.count;
-        pairs = dtl_arena_alloc(a, (pcount ? pcount : 1) * sizeof(*pairs));
+        /* Allocate exactly the number of pairs the record will carry. */
+        pairs = malloc((pcount ? pcount : 1) * sizeof(*pairs));
         if (pairs == NULL)
             return DTL_ERR_OOM;
         for (i = 0; i < pairs_obj->u.obj.count; i++) {
