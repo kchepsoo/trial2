@@ -1,6 +1,5 @@
 #include "format/container.h"
 
-#include "defects.h"
 #include "format/crc.h"
 
 /* Number of header bytes covered by header_crc (magic..section_count). */
@@ -65,52 +64,6 @@ static dtl_err dtl_container_resolve_blobs(dtl_section *secs, uint16_t count,
 {
     uint16_t i;
 
-#if DTL_BUG(14)
-    /*
-     * BUG 14: sections are validated only by their AGGREGATE compressed size,
-     * accumulated in 32 bits with no pre-add guard -- comp_lens whose sum
-     * wraps the accumulator land small, the aggregate bound passes, and no
-     * per-section blob range check ever runs. A decode that follows a
-     * section's own (unwrapped) comp_len then reads past the blob region.
-     */
-    {
-        uint32_t total = 0;
-
-        for (i = 0; i < count; i++) {
-            uint32_t raw = secs[i].raw_len;
-
-            if (raw == 0 || raw > DTL_SECTION_MAX_RAW)
-                return DTL_ERR_RANGE;
-            total += secs[i].comp_len;
-        }
-        if (total > blob_len)
-            return DTL_ERR_RANGE;
-        for (i = 0; i < count; i++)
-            secs[i].blob = blob_base + secs[i].offset;
-    }
-    return DTL_OK;
-#else
-#if DTL_BUG(29)
-    /* BUG 29 (consumer half): sections are validated only by a per-section
-     * end accumulated as off + comp in 32 bits -- no aggregate check runs at
-     * all. A comp_len that wraps the sum back small passes the bound check,
-     * and the decode that follows keeps reading past the end of the blob
-     * region. */
-    for (i = 0; i < count; i++) {
-        uint32_t raw = secs[i].raw_len;
-        uint32_t comp = secs[i].comp_len;
-        uint32_t off = secs[i].offset;
-
-        if (raw == 0 || raw > DTL_SECTION_MAX_RAW)
-            return DTL_ERR_RANGE;
-        if ((uint32_t)(off + comp) > blob_len)
-            return DTL_ERR_RANGE;
-
-        secs[i].blob = blob_base + off;
-    }
-
-    return DTL_OK;
-#else
     /* Aggregate compressed size, accumulated with a pre-add overflow guard. */
     {
         size_t total = 0;
@@ -148,8 +101,6 @@ static dtl_err dtl_container_resolve_blobs(dtl_section *secs, uint16_t count,
     }
 
     return DTL_OK;
-#endif
-#endif
 }
 
 dtl_err dtl_container_parse(dtl_buf *b, dtl_arena *a, dtl_container *out)
@@ -190,14 +141,7 @@ dtl_err dtl_container_parse(dtl_buf *b, dtl_arena *a, dtl_container *out)
     /* header_crc covers the 8 header bytes we just consumed. */
     if ((rc = dtl_buf_read_u32(b, &stored_crc)) != DTL_OK)
         return rc;
-#if DTL_BUG(38)
-    /* BUG 38: the header CRC is verified over a shadow of the real span --
-     * the section_count bytes are left uncovered, so a rewritten section
-     * count passes the integrity check untouched. */
-    computed_crc = dtl_crc32(b->p + hdr_start, DTL_HEADER_CRC_SPAN - 2u);
-#else
     computed_crc = dtl_crc32(b->p + hdr_start, DTL_HEADER_CRC_SPAN);
-#endif
     if (computed_crc != stored_crc)
         return DTL_ERR_BADHEADER;
 

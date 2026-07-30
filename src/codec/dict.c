@@ -5,11 +5,7 @@
 #include "core/arena.h"
 #include "core/buf.h"
 #include "core/endian.h"
-#include "defects.h"
 
-#if DTL_BUG(4)
-#include <stdlib.h>
-#endif
 
 /* Fixed block size the encoder chunks the input into (<= 255 to fit phrase_len). */
 #define DTL_DICT_BLOCK 4u
@@ -40,14 +36,7 @@ static dtl_err dtl_dict_decode_impl(const uint8_t *in, size_t in_len,
         return rc;
 
     if (entry_count != 0) {
-#if DTL_BUG(4)
-        /* BUG 4 backing store: a tight heap block (not arena-carved) so the
-         * off-by-one read at id == entry_count crosses a real malloc redzone
-         * and ASan reports a genuine heap-buffer-overflow. */
-        entries = malloc((size_t)entry_count * sizeof(*entries));
-#else
         entries = dtl_arena_alloc(arena, (size_t)entry_count * sizeof(*entries));
-#endif
         if (entries == NULL)
             return DTL_ERR_OOM;
     }
@@ -72,15 +61,8 @@ static dtl_err dtl_dict_decode_impl(const uint8_t *in, size_t in_len,
 
         if ((rc = dtl_buf_read_u16(&b, &id)) != DTL_OK)
             return rc; /* trailing odd byte -> TRUNCATED */
-#if DTL_BUG(4)
-        /* BUG 4: off-by-one bound -- id == entry_count is accepted and reads
-         * one table entry past the end of the entries array. */
-        if (id > entry_count)
-            return DTL_ERR_BADRECORD; /* token id out of range */
-#else
         if (id >= entry_count)
             return DTL_ERR_BADRECORD; /* token id out of range */
-#endif
 
         if (out_cap - o < entries[id].len)
             return DTL_ERR_RANGE;
@@ -89,9 +71,6 @@ static dtl_err dtl_dict_decode_impl(const uint8_t *in, size_t in_len,
         o += entries[id].len;
     }
 
-#if DTL_BUG(4)
-    free(entries); /* the OOB read above fires before this is reached */
-#endif
     *out_len = o;
     return DTL_OK;
 }

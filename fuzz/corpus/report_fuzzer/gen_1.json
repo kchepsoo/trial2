@@ -1,0 +1,11 @@
+[
+  {"index":0,"tag":16,"type":"HEARTBEAT","uptime_s":100,"seq":8},
+  {"index":1,"tag":20,"type":"GEO","lat_e7":1000,"lon_e7":-1000,"alt_mm":1},
+  {"index":2,"tag":21,"type":"BATTERY","pct":1,"temp_c_e1":-97,"cycles":11},
+  {"index":3,"tag":25,"type":"KEYREF","slot_id":1,"redacted":false,"label":"device-key-slot-1"},
+  {"index":4,"tag":19,"type":"DIAG","subsystem":65280,"redacted":false,"blob_hex":"4142434445464748"},
+  {"index":5,"tag":18,"type":"EVENT","code":13,"payload_hex":"01020304"},
+  {"index":6,"tag":23,"type":"LOG","severity":1,"msg":"corpus record seed=1"},
+  {"index":7,"tag":24,"type":"CONFIG","pairs":{"mode":"standby","index":"1"}},
+  {"index":8,"tag":17,"type":"SENSOR","sensor_id":1,"samples":[1.5,-2.5]}
+]

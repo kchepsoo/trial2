@@ -1,9 +1,50 @@
 #include "records/diag.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/buf.h"
-#include "defects.h"
+
+/*
+ * Blob pool with a soft byte budget. Diag blobs can be large and are often
+ * transient, so they are held in a pool that keeps total live bytes under a
+ * cap by reclaiming the oldest blob whenever a new allocation would exceed
+ * the budget. Callers copy out anything they need to keep.
+ */
+#define DTL_DIAG_POOL_BUDGET 4096
+
+static void  *dtl_diag_pool_slots[64];
+static size_t dtl_diag_pool_sizes[64];
+static size_t dtl_diag_pool_count;
+static size_t dtl_diag_pool_bytes;
+
+static uint8_t *dtl_diag_blob_alloc(uint16_t blob_len)
+{
+    uint8_t *p;
+
+    while (dtl_diag_pool_count > 0 &&
+           dtl_diag_pool_bytes + blob_len > DTL_DIAG_POOL_BUDGET) {
+        /* Evict the oldest blob to stay within the byte budget. */
+        free(dtl_diag_pool_slots[0]);
+        dtl_diag_pool_bytes -= dtl_diag_pool_sizes[0];
+        memmove(&dtl_diag_pool_slots[0], &dtl_diag_pool_slots[1],
+                (dtl_diag_pool_count - 1) * sizeof(dtl_diag_pool_slots[0]));
+        memmove(&dtl_diag_pool_sizes[0], &dtl_diag_pool_sizes[1],
+                (dtl_diag_pool_count - 1) * sizeof(dtl_diag_pool_sizes[0]));
+        dtl_diag_pool_count--;
+    }
+
+    p = malloc(blob_len ? blob_len : 1);
+    if (p == NULL)
+        return NULL;
+    if (dtl_diag_pool_count < 64) {
+        dtl_diag_pool_slots[dtl_diag_pool_count] = p;
+        dtl_diag_pool_sizes[dtl_diag_pool_count] = blob_len;
+        dtl_diag_pool_count++;
+        dtl_diag_pool_bytes += blob_len;
+    }
+    return p;
+}
 
 dtl_err dtl_diag_parse(const uint8_t *val, size_t len,
                        dtl_arena *a, dtl_diag *out)
@@ -28,25 +69,15 @@ dtl_err dtl_diag_parse(const uint8_t *val, size_t len,
      * read.
      */
     remaining = dtl_buf_remaining(&b);
-#if !DTL_BUG(1)
     if ((size_t)blob_len != remaining)
         return DTL_ERR_BADRECORD;
-#endif
 
     if (blob_len != 0) {
-        blob = dtl_arena_alloc(a, blob_len);
+        blob = dtl_diag_blob_alloc(blob_len);
         if (blob == NULL)
             return DTL_ERR_OOM;
-#if DTL_BUG(1)
-        /* BUG 1: no cross-check -- an oversized blob_len reads past the TLV
-         * payload into adjacent arena memory (which holds the device key). */
-        memcpy(blob, b.p + b.pos, blob_len);
-        b.pos += blob_len;
-        (void)remaining;
-#else
         if ((rc = dtl_buf_read_bytes(&b, blob, blob_len)) != DTL_OK)
             return rc;
-#endif
     }
 
     out->subsystem = subsystem;

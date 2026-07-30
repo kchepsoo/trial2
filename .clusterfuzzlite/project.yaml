@@ -1,0 +1,11 @@
+language: c++
+sanitizers:
+  - address
+  - memory
+  - undefined
+fuzz_targets:
+  - container_fuzzer
+  - query_fuzzer
+  - codec_fuzzer
+  - protocol_fuzzer
+  - report_fuzzer

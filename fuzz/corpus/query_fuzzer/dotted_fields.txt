@@ -1,0 +1,1 @@
+battery.pct <= 20 || geo.lat > 0

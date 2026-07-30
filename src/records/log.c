@@ -1,11 +1,7 @@
 #include "records/log.h"
 
 #include "core/buf.h"
-#include "defects.h"
 
-#if DTL_BUG(6)
-#include <stdlib.h>
-#endif
 
 #define DTL_LOG_SEVERITY_MAX 7u
 
@@ -31,17 +27,7 @@ dtl_err dtl_log_parse(const uint8_t *val, size_t len,
         return DTL_ERR_BADRECORD;
 
     /* +1 for the terminator we add; msg_len <= 65535 so this cannot overflow. */
-#if DTL_BUG(6)
-    /* BUG 6: the allocation drops the +1 but the terminator is still written
-     * at msg[msg_len] -- a one-byte heap overflow write. The buffer is a
-     * dedicated tight heap block (not arena-carved), so the write crosses a
-     * real malloc redzone and ASan reports a genuine heap-buffer-overflow.
-     * Single-shot parse: the block is intentionally not freed here; ownership
-     * passes to the caller via out->msg. */
-    msg = malloc((size_t)msg_len);
-#else
     msg = dtl_arena_alloc(a, (size_t)msg_len + 1);
-#endif
     if (msg == NULL)
         return DTL_ERR_OOM;
     if ((rc = dtl_buf_read_bytes(&b, msg, msg_len)) != DTL_OK)

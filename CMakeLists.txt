@@ -22,12 +22,6 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
 endif()
 
 # ---------------------------------------------------------------------------
-# Defect selector. Exactly one defect (or none) is armed per build via BUG_ID;
-# see src/defects.h. Every config below is compiled with -DBUG_ID=${BUG_ID}.
-# ---------------------------------------------------------------------------
-set(BUG_ID 0 CACHE STRING "Which defect to arm for this build (0 = none).")
-
-# ---------------------------------------------------------------------------
 # Core module sources. One static library per build config is produced from
 # exactly these files so tests can link whichever config they need.
 # ---------------------------------------------------------------------------
@@ -102,6 +96,29 @@ set(DTL_WRITER_SOURCES
     src/writer/writer.c
 )
 
+# report module: container reporting and transformation tools (walk pipeline,
+# stats, index, export, validate, diff, merge, split). Depends on writer
+# (merge/split re-encode) and query's dependencies.
+set(DTL_REPORT_SOURCES
+    src/report/walk.c
+    src/report/stats.c
+    src/report/index.c
+    src/report/export.c
+    src/report/validate.c
+    src/report/diff.c
+    src/report/merge.c
+    src/report/split.c
+    src/report/repack.c
+    src/report/select.c
+    src/report/import.c
+    src/report/jimport.c
+    src/report/timeline.c
+    src/report/topk.c
+    src/report/dedup.c
+    src/report/sample.c
+    src/report/sign.c
+)
+
 # cli module: subcommand implementations behind the `dtl` front end. Links the
 # whole decode pipeline plus crypto (redaction/hmac) and query.
 set(DTL_CLI_SOURCES
@@ -155,8 +172,8 @@ add_custom_target(dtl_gen_seed DEPENDS "${DTL_SEED_HEADER}")
 #   suffix "_asan" -> config "dtl_asan"  (ASan + UBSan)
 #   suffix "_msan" -> config "dtl_msan"  (MSan with origin tracking)
 #
-# BUG_ID and the src/ include root are attached as PUBLIC usage requirements so
-# they propagate to anything that links the core library (e.g. the smoke exe and
+# The src/ include root is attached as a PUBLIC usage requirement so it
+# propagates to anything that links the core library (e.g. the smoke exe and
 # future tests). Sanitizer flags are PUBLIC in both compile and link scope so
 # consumers are instrumented and linked consistently with the library.
 # ---------------------------------------------------------------------------
@@ -166,7 +183,6 @@ function(dtl_add_config suffix)
     set(core "dtl_core${suffix}")
     add_library(${core} STATIC ${DTL_CORE_SOURCES})
     target_include_directories(${core} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_compile_definitions(${core} PUBLIC BUG_ID=${BUG_ID})
     target_compile_options(${core} PUBLIC ${CFG_COMPILE})
     target_compile_options(${core} PRIVATE ${DTL_WARN_FLAGS})
     if(CFG_LINK)
@@ -253,12 +269,25 @@ function(dtl_add_config suffix)
     target_compile_options(${wsmoke} PRIVATE ${DTL_WARN_FLAGS})
     target_link_libraries(${wsmoke} PRIVATE ${writer})
 
+    # report library + smoke for this config. Links writer (merge/split
+    # re-encode records) which carries codec and crypto transitively.
+    set(report "dtl_report${suffix}")
+    add_library(${report} STATIC ${DTL_REPORT_SOURCES})
+    target_compile_options(${report} PRIVATE ${DTL_WARN_FLAGS})
+    target_link_libraries(${report} PUBLIC ${writer} ${query})
+
+    set(repsmoke "dtl_report_smoke${suffix}")
+    add_executable(${repsmoke} src/report/_smoke.c)
+    target_compile_options(${repsmoke} PRIVATE ${DTL_WARN_FLAGS})
+    target_link_libraries(${repsmoke} PRIVATE ${report})
+
     # cli library: the subcommand logic. Links query (carries records/format/
-    # core) and crypto and codec so the whole pipeline is available.
+    # core) and crypto and codec so the whole pipeline is available, plus the
+    # report tools exposed as subcommands.
     set(cli "dtl_cli${suffix}")
     add_library(${cli} STATIC ${DTL_CLI_SOURCES})
     target_compile_options(${cli} PRIVATE ${DTL_WARN_FLAGS})
-    target_link_libraries(${cli} PUBLIC ${query} ${codec} ${crypto})
+    target_link_libraries(${cli} PUBLIC ${query} ${codec} ${crypto} ${report})
 
     # The real `dtl` executable (and dtl_asan / dtl_msan variants).
     set(exe "dtl${suffix}")
@@ -295,7 +324,16 @@ add_executable(dtl_gen_corpus tools/gen_corpus.c)
 target_compile_options(dtl_gen_corpus PRIVATE ${DTL_WARN_FLAGS})
 target_link_libraries(dtl_gen_corpus PRIVATE dtl_writer)
 
-# tools/gen_exploit: crafted-input generator (host build, no sanitizer).
-add_executable(dtl_gen_exploit tools/gen_exploit.c)
-target_compile_options(dtl_gen_exploit PRIVATE ${DTL_WARN_FLAGS})
-target_link_libraries(dtl_gen_exploit PRIVATE dtl_writer)
+# ---------------------------------------------------------------------------
+# Test registration: every per-module smoke binary runs under ctest, in all
+# three configurations (plain, ASan+UBSan, MSan).
+# ---------------------------------------------------------------------------
+enable_testing()
+
+foreach(cfg "" "_asan" "_msan")
+    add_test(NAME core_smoke${cfg} COMMAND dtl_smoke${cfg})
+    foreach(mod format codec records crypto query writer report cli)
+        add_test(NAME ${mod}_smoke${cfg}
+                 COMMAND dtl_${mod}_smoke${cfg})
+    endforeach()
+endforeach()

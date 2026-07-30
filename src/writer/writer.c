@@ -5,7 +5,6 @@
 
 #include "codec/registry.h"
 #include "core/endian.h"
-#include "defects.h"
 #include "crypto/hash.h"
 #include "format/container.h"
 #include "format/crc.h"
@@ -237,19 +236,11 @@ static dtl_err dtl_writer_emit_tlv(dtl_writer *w, uint8_t tag,
         return w->err;
 
     plen = w->tlv_len - payload_start;
-#if DTL_BUG(28)
-    /* BUG 28: an over-long payload is emitted in full but the u16 length
-     * field is patched with its wrapped low half -- the stream is silently
-     * mis-framed, and a re-decode walks off the truncated record into the
-     * payload body. */
-    dtl_endian_write_u16le(w->tlv + len_off, (uint16_t)plen);
-#else
     if (plen > 0xFFFF) {
         w->err = DTL_ERR_RANGE;
         return w->err;
     }
     dtl_endian_write_u16le(w->tlv + len_off, (uint16_t)plen);
-#endif
     return DTL_OK;
 }
 
@@ -257,30 +248,10 @@ dtl_err dtl_writer_add_u32_batch(dtl_writer *w, uint8_t tag,
                                  const uint32_t *vals, uint32_t count)
 {
     uint32_t i;
-    dtl_err rc;
 
     if (w->err != DTL_OK)
         return w->err;
 
-#if DTL_BUG(13)
-    /* BUG 13: the staging size is computed in 32 bits -- count*4 wraps to a
-     * tiny allocation, but the copy loop still runs over the full batch and
-     * writes past the tight heap block. */
-    {
-        uint32_t bytes32 = count * 4u;
-        uint8_t *staging = malloc(bytes32);
-
-        if (staging == NULL) {
-            w->err = DTL_ERR_OOM;
-            return w->err;
-        }
-        for (i = 0; i < count; i++)
-            dtl_endian_write_u32le(staging + 4u * i, vals[i]);
-        rc = dtl_writer_emit_tlv(w, tag, NULL, staging, (uint16_t)bytes32);
-        free(staging);
-        return rc;
-    }
-#else
     /* The u16 length prefix caps the payload at 0xFFFF bytes. */
     if (count > 0xFFFFu / 4u) {
         w->err = DTL_ERR_RANGE;
@@ -298,7 +269,6 @@ dtl_err dtl_writer_add_u32_batch(dtl_writer *w, uint8_t tag,
             dtl_endian_write_u32le(staging + 4u * i, vals[i]);
         return dtl_writer_emit_tlv(w, tag, NULL, staging, (uint16_t)bytes);
     }
-#endif
 }
 
 dtl_err dtl_writer_add_record(dtl_writer *w, const dtl_record *rec)
@@ -413,13 +383,11 @@ dtl_err dtl_writer_finish(dtl_writer *w, uint8_t **out, size_t *out_len)
     for (i = 0; i < w->nsections; i++)
         blob_region += w->sections[i].comp_len;
 
-#if !DTL_BUG(29)
     /* The blob region offset field is u32; guard the cumulative size. */
     if (blob_region > 0xFFFFFFFFu) {
         w->err = DTL_ERR_RANGE;
         return w->err;
     }
-#endif
 
     hmac_size = w->has_hmac ? DTL_HMAC_LEN : 0;
     total = header_size + table_size + blob_region + hmac_size;
@@ -435,38 +403,11 @@ dtl_err dtl_writer_finish(dtl_writer *w, uint8_t **out, size_t *out_len)
     buf[4] = (uint8_t)DTL_VERSION;
     buf[5] = (uint8_t)(w->has_hmac ? DTL_FLAG_HAS_HMAC : 0u);
     dtl_endian_write_u16le(buf + 6, (uint16_t)w->nsections);
-#if DTL_BUG(38)
-    /* BUG 38 (producer half): the header CRC is computed over a shadow of
-     * the real span, leaving section_count uncovered (the consumer half is
-     * in format/container.c). */
-    crc = dtl_crc32(buf, 6);
-#else
     crc = dtl_crc32(buf, 8); /* over magic..section_count */
-#endif
     dtl_endian_write_u32le(buf + 8, crc);
 
     /* Section table, then the blob region. Offsets are cumulative comp_len. */
     tpos = header_size;
-#if DTL_BUG(29)
-    /* BUG 29 (producer half): blob offsets are accumulated in 32 bits with
-     * no overflow guard; once the section data exceeds 4 GiB the emitted
-     * offsets wrap and point back into earlier blobs (the consumer half of
-     * this defect is in format/container.c). */
-    {
-        uint32_t acc32 = 0;
-
-        for (i = 0; i < w->nsections; i++) {
-            dtl_wsection *s = &w->sections[i];
-            dtl_endian_write_u16le(buf + tpos, s->type); tpos += 2;
-            buf[tpos++] = s->codec_id;
-            buf[tpos++] = 0; /* reserved */
-            dtl_endian_write_u32le(buf + tpos, s->raw_len);  tpos += 4;
-            dtl_endian_write_u32le(buf + tpos, s->comp_len); tpos += 4;
-            dtl_endian_write_u32le(buf + tpos, acc32); tpos += 4;
-            acc32 += s->comp_len;
-        }
-    }
-#else
     acc = 0;
     for (i = 0; i < w->nsections; i++) {
         dtl_wsection *s = &w->sections[i];
@@ -478,7 +419,6 @@ dtl_err dtl_writer_finish(dtl_writer *w, uint8_t **out, size_t *out_len)
         dtl_endian_write_u32le(buf + tpos, (uint32_t)acc); tpos += 4;
         acc += s->comp_len;
     }
-#endif
 
     bpos = header_size + table_size;
     acc = 0;

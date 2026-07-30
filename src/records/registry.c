@@ -4,41 +4,15 @@
 #include <string.h>
 
 #include "core/endian.h"
-#include "defects.h"
 
 dtl_err dtl_record_parse(const dtl_tlv *tlv, dtl_arena *a, dtl_record *out)
 {
     dtl_err rc;
 
-#if DTL_BUG(32)
-    /* BUG 32: the payload length is re-fetched from the wire bytes that
-     * precede the payload instead of the cursor value dtl_tlv_next already
-     * bounds-checked -- a buffer whose length field changes between the
-     * check and this use drives the parse with the new, unchecked length. */
-    dtl_tlv wire = *tlv;
-
-    wire.len = dtl_endian_read_u16le(tlv->val - 2);
-    tlv = &wire;
-#endif
 
     switch (tlv->tag) {
     case DTL_REC_HEARTBEAT:
-#if DTL_BUG(22)
-        /* BUG 22: the heartbeat is parsed into a tight private block but
-         * copied into the result with the size of its larger sibling
-         * dtl_net, so the copy reads past the smaller allocation. */
-        {
-            dtl_heartbeat *hb = malloc(sizeof *hb);
-            if (hb == NULL)
-                return DTL_ERR_OOM;
-            rc = dtl_heartbeat_parse(tlv->val, tlv->len, a, hb);
-            if (rc == DTL_OK)
-                memcpy(&out->u.heartbeat, hb, sizeof(dtl_net));
-            free(hb);
-        }
-#else
         rc = dtl_heartbeat_parse(tlv->val, tlv->len, a, &out->u.heartbeat);
-#endif
         break;
     case DTL_REC_GEO:
         rc = dtl_geo_parse(tlv->val, tlv->len, a, &out->u.geo);

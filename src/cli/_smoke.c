@@ -39,6 +39,11 @@ static int g_failures = 0;
 #define PLAIN_PATH   "_cli_smoke_plain.dtl"
 #define HMAC_PATH    "_cli_smoke_hmac.dtl"
 #define GARBAGE_PATH "_cli_smoke_garbage.dtl"
+#define DEDUP_PATH   "_cli_smoke_dedup.dtl"
+#define SAMPLE_A_PATH "_cli_smoke_sample_a.dtl"
+#define SAMPLE_B_PATH "_cli_smoke_sample_b.dtl"
+#define JSON_PATH    "_cli_smoke_export.json"
+#define JI_PATH      "_cli_smoke_ji.dtl"
 
 static const uint8_t KEY[] = "cli-smoke-key";
 #define KEY_LEN (sizeof KEY - 1)
@@ -226,6 +231,67 @@ int main(void)
     CHECK(strstr(g_out, "section 0: type=1 codec=0") != NULL,
           "dump section 0 line present");
 
+    /* --- report subcommands --------------------------------------------- */
+    printf("\n[report subcommands]\n");
+
+    /* timeline: heartbeat uptime 99 after 1200 is an ordering violation */
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_timeline(PLAIN_PATH, o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0, "timeline exits 0 (got %d)", code);
+    CHECK(strstr(g_out, "sessions: 2") != NULL, "timeline sees 2 sessions");
+    CHECK(strstr(g_out, "ordering-violations=1") != NULL,
+          "timeline flags the 1200 -> 99 regression");
+
+    /* topk: the single battery record must rank first */
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_topk(PLAIN_PATH, "battery.pct", "3", o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0, "topk exits 0 (got %d)", code);
+    CHECK(strstr(g_out, "1 candidates") != NULL, "topk sees 1 battery record");
+    CHECK(strstr(g_out, "value=15.000") != NULL, "topk shows pct=15");
+
+    /* dedup: PLAIN holds no duplicates */
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_dedup(PLAIN_PATH, DEDUP_PATH, o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0, "dedup exits 0 (got %d)", code);
+    CHECK(strstr(g_out, "dropped 0") != NULL, "dedup drops nothing");
+
+    /* sample: same seed twice, then diff the two outputs */
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_sample(PLAIN_PATH, SAMPLE_A_PATH, "3", "42", o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0 && strstr(g_out, "took 3") != NULL,
+          "sample takes 3 (code %d)", code);
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_sample(PLAIN_PATH, SAMPLE_B_PATH, "3", "42", o, e);
+    fclose(o); fclose(e);
+    CHECK(code == 0, "sample repeat exits 0 (got %d)", code);
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_diff(SAMPLE_A_PATH, SAMPLE_B_PATH, o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0 && strstr(g_out, "0 record(s) differ") != NULL,
+          "same seed -> identical samples (code %d)", code);
+
+    /* import-json: export PLAIN to JSON, re-import, diff against original */
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_export(PLAIN_PATH, "json", o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0, "export json exits 0 (got %d)", code);
+    CHECK(write_file(JSON_PATH, (const uint8_t *)g_out, strlen(g_out)) == 0,
+          "JSON export written to disk");
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_import_json(JSON_PATH, JI_PATH, o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0 && strstr(g_out, "import: 9 record(s)") != NULL,
+          "import-json round-trips 9 records (code %d)", code);
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_diff(PLAIN_PATH, JI_PATH, o, e);
+    slurp(o); fclose(o); fclose(e);
+    CHECK(code == 0 && strstr(g_out, "0 record(s) differ") != NULL,
+          "JSON round-trip preserves every record (code %d)", code);
+
     /* --- error paths (must be nonzero, no crash, no sanitizer report) --- */
     printf("\n[error paths]\n");
     o = tmpfile(); e = tmpfile();
@@ -248,9 +314,39 @@ int main(void)
     fclose(o); fclose(e);
     CHECK(code != 0, "dump missing file -> nonzero (got %d)", code);
 
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_topk(PLAIN_PATH, "nope.field", "3", o, e);
+    fclose(o); fclose(e);
+    CHECK(code != 0, "topk unknown field -> nonzero (got %d)", code);
+
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_sample(PLAIN_PATH, SAMPLE_A_PATH, "notanumber", "42", o, e);
+    fclose(o); fclose(e);
+    CHECK(code != 0, "sample bad n -> nonzero (got %d)", code);
+
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_import_json(GARBAGE_PATH, JI_PATH, o, e);
+    fclose(o); fclose(e);
+    CHECK(code != 0, "import-json garbage -> nonzero (got %d)", code);
+
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_dedup("no_such_file_here.dtl", DEDUP_PATH, o, e);
+    fclose(o); fclose(e);
+    CHECK(code != 0, "dedup missing file -> nonzero (got %d)", code);
+
+    o = tmpfile(); e = tmpfile();
+    code = dtl_cli_timeline(GARBAGE_PATH, o, e);
+    fclose(o); fclose(e);
+    CHECK(code != 0, "timeline garbage -> nonzero (got %d)", code);
+
     remove(PLAIN_PATH);
     remove(HMAC_PATH);
     remove(GARBAGE_PATH);
+    remove(DEDUP_PATH);
+    remove(SAMPLE_A_PATH);
+    remove(SAMPLE_B_PATH);
+    remove(JSON_PATH);
+    remove(JI_PATH);
 
     printf("\ncli smoke: %s (%d failure%s)\n",
            g_failures == 0 ? "ok" : "FAILED",

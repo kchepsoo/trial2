@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 
-#include "defects.h"
 
 /*
  * AddressSanitizer manual poisoning: every sub-allocation carved from a slab is
@@ -76,14 +75,7 @@ static int dtl_arena_reserve_slot(dtl_arena *a)
     if (newcap > SIZE_MAX / sizeof(dtl_arena_block))
         return 0;
 
-#if DTL_BUG(34)
-    /* BUG 34: the descriptor array is grown one element short, but
-     * blocks_cap still records the full count -- the slot written for the
-     * final element lands past the allocation. */
-    grown = realloc(a->blocks, (newcap - 1u) * sizeof(dtl_arena_block));
-#else
     grown = realloc(a->blocks, newcap * sizeof(dtl_arena_block));
-#endif
     if (grown == NULL)
         return 0;
 

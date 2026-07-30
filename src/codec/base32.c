@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "defects.h"
 
 /* Encoding alphabet (RFC 4648): index 0..31 -> character. */
 static const char dtl_base32_alphabet[] =
@@ -93,23 +92,8 @@ dtl_err dtl_base32_decode(const uint8_t *in, size_t in_len,
 
         memcpy(grp, in + g * 8, 8);
 
-#if DTL_BUG(18)
-        /* BUG 18: the final group's pad scan runs forward with an inclusive
-         * bound, so a full (unpadded) final group reads grp[8], one slot
-         * past the 8-byte stack scratch. */
-        if (g == ngroups - 1) {
-            unsigned i = 0;
-            while (i <= 8 && grp[i] != '=')
-                i++;
-            pad = 8u - i;
-        } else {
-            while (pad < 8 && grp[7 - pad] == '=')
-                pad++;
-        }
-#else
         while (pad < 8 && grp[7 - pad] == '=')
             pad++;
-#endif
 
         /* Padding may only appear in the final group. */
         if (g != ngroups - 1 && pad != 0)
@@ -132,27 +116,8 @@ dtl_err dtl_base32_decode(const uint8_t *in, size_t in_len,
             acc |= (uint64_t)v << (5u * (7u - j));
         }
 
-#if DTL_BUG(15)
-        /* BUG 15: the output bound is a 32-bit decoded-size estimate derived
-         * from the input length -- ngroups*5 wraps for a large input, the
-         * wrapped estimate replaces the caller's real capacity, and the write
-         * loop runs past the caller's buffer. */
-        {
-            uint32_t est = (uint32_t)(ngroups * 5u);
-
-            if (est - (uint32_t)o < databytes)
-                return DTL_ERR_RANGE;
-        }
-#else
         if (out_cap - o < databytes)
             return DTL_ERR_RANGE;
-#endif
-#if DTL_BUG(8)
-        /* BUG 8: padding miscount -- a 6-pad group yields only 1 data byte,
-         * but this branch writes 2, overflowing a correctly sized buffer. */
-        if (pad == 6)
-            databytes = 2;
-#endif
         for (k = 0; k < databytes; k++)
             out[o++] = (uint8_t)((acc >> (8u * (4u - k))) & 0xffu);
     }

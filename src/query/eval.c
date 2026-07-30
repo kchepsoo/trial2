@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "defects.h"
 
 /* A resolved value: an integer, a (bytes,len) string, or "none" (no value). */
 typedef enum { DTL_VAL_NONE, DTL_VAL_INT, DTL_VAL_STR } dtl_val_kind;
@@ -188,23 +187,6 @@ static dtl_value dtl_resolve(const dtl_ast *node, const dtl_record *rec)
 
 static int dtl_int_cmp(int64_t a, int64_t b, dtl_cmp_op op)
 {
-#if DTL_BUG(30)
-    /* BUG 30: ordering comparisons are done on the unsigned bit pattern, so
-     * a negative field value sorts above every non-negative literal and
-     * range filters silently include/exclude the wrong records. */
-    uint64_t ua = (uint64_t)a;
-    uint64_t ub = (uint64_t)b;
-
-    switch (op) {
-    case DTL_CMP_EQ: return ua == ub;
-    case DTL_CMP_NE: return ua != ub;
-    case DTL_CMP_LT: return ua < ub;
-    case DTL_CMP_LE: return ua <= ub;
-    case DTL_CMP_GT: return ua > ub;
-    case DTL_CMP_GE: return ua >= ub;
-    }
-    return 0;
-#else
     switch (op) {
     case DTL_CMP_EQ: return a == b;
     case DTL_CMP_NE: return a != b;
@@ -214,7 +196,6 @@ static int dtl_int_cmp(int64_t a, int64_t b, dtl_cmp_op op)
     case DTL_CMP_GE: return a >= b;
     }
     return 0;
-#endif
 }
 
 static int dtl_str_cmp(const dtl_value *a, const dtl_value *b, dtl_cmp_op op)

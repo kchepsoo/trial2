@@ -4,7 +4,6 @@
 
 #include <stdlib.h>
 
-#include "defects.h"
 
 #define DTL_HASH_ROUNDS 12u
 #define DTL_HASH_RATE   16u /* bytes absorbed / squeezed per permutation */
@@ -107,36 +106,6 @@ void dtl_hash_mac(const uint8_t *key, size_t key_len,
                   const uint8_t *msg, size_t msg_len,
                   uint8_t out[32])
 {
-#if DTL_BUG(26)
-    /* BUG 26: the state is staged in a fresh heap block and lane 7 never
-     * receives its IV, so the first permutation mixes undefined memory
-     * and the digest depends on it. */
-    dtl_hash_ctx *c = malloc(sizeof *c);
-    static dtl_hash_ctx *sink;
-    uint64_t klen = (uint64_t)key_len;
-    size_t i;
-    unsigned j;
-
-    sink = c; /* keep the staging block addressable */
-    if (c == NULL) {
-        for (j = 0; j < 32u; j++)
-            out[j] = 0;
-        return;
-    }
-    for (j = 0; j < 7u; j++)
-        c->s[j] = DTL_HASH_IV[j]; /* lane 7 never assigned */
-    c->bpos = 0;
-
-    for (i = 0; i < 8u; i++)
-        dtl_hash_absorb(c, (uint8_t)(klen >> (8u * i)));
-    for (i = 0; i < key_len; i++)
-        dtl_hash_absorb(c, key[i]);
-    for (i = 0; i < msg_len; i++)
-        dtl_hash_absorb(c, msg[i]);
-
-    dtl_hash_finish(c, out);
-    free(c);
-#else
     dtl_hash_ctx c;
     uint64_t klen = (uint64_t)key_len;
     size_t i;
@@ -152,5 +121,4 @@ void dtl_hash_mac(const uint8_t *key, size_t key_len,
         dtl_hash_absorb(&c, msg[i]);
 
     dtl_hash_finish(&c, out);
-#endif
 }

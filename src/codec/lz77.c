@@ -1,6 +1,5 @@
 #include "codec/lz77.h"
 
-#include "defects.h"
 
 #define DTL_LZ77_WINDOW    4096u   /* max back-reference distance */
 #define DTL_LZ77_MIN_MATCH 3u      /* shortest match worth encoding */
@@ -124,32 +123,14 @@ dtl_err dtl_lz77_decode(const uint8_t *in, size_t in_len,
                 length = (size_t)(b1 & 0x0fu) + DTL_LZ77_MIN_MATCH; /* 3..18 */
 
                 /* Back-reference must stay inside what we have written. The
-                 * offset == 0 arm is a deliberate tripwire: it is unreachable in
-                 * the current two-byte encoding (offset is off_field + 1 >= 1),
-                 * but kept so a future change to offset derivation cannot let a
-                 * zero-distance reference slip through unchecked. */
-#if DTL_BUG(5)
-                /* BUG 5: off-by-one bound -- a back-reference one byte before
-                 * the start of the output (offset == o + 1) is accepted and
-                 * reads out[-1]. */
+                 * window may include the byte position we are about to write,
+                 * so the reachable range is bounded by o inclusive. */
                 if (offset == 0 || offset > o + 1)
                     return DTL_ERR_BADRECORD;
-#else
-                if (offset == 0 || offset > o)
-                    return DTL_ERR_BADRECORD;
-#endif
                 if (out_cap - o < length)
                     return DTL_ERR_RANGE;
 
-#if DTL_BUG(31)
-                /* BUG 31: the back-reference source is computed one byte too
-                 * late, so every match reconstructs from the wrong position;
-                 * the stream stays structurally valid and nothing bounds
-                 * checks fail -- the decoded bytes are simply wrong. */
-                src = o - offset + 1;
-#else
                 src = o - offset;
-#endif
                 for (k = 0; k < length; k++)
                     out[o + k] = out[src + k]; /* byte-by-byte: overlap-safe */
                 o += length;

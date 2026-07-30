@@ -3,7 +3,6 @@
 #include <stdlib.h>
 
 #include "query/lex.h"
-#include "defects.h"
 
 typedef struct dtl_parser {
     dtl_lexer  lex;
@@ -68,23 +67,8 @@ static dtl_ast *dtl_parse_primary(dtl_parser *p, int depth)
 {
     dtl_ast *node;
 
-#if DTL_BUG(35)
-    /* BUG 35: the depth guard is gone from the primary production; nested
-     * parentheses recurse primary -> expr -> and -> cmp -> primary with no
-     * bound until the stack is exhausted. */
-    (void)depth;
-    if (p->err != DTL_OK)
-        return dtl_parse_fail(p);
-#else
-#if DTL_BUG(35)
-    (void)depth;
-    if (p->err != DTL_OK)
-        return dtl_parse_fail(p);
-#else
     if (p->err != DTL_OK || depth > DTL_QUERY_MAX_DEPTH)
         return dtl_parse_fail(p);
-#endif
-#endif
 
     switch (p->cur.kind) {
     case DTL_TOK_NUM:
@@ -164,14 +148,8 @@ static dtl_ast *dtl_parse_cmp(dtl_parser *p, int depth)
     dtl_ast *left;
     dtl_cmp_op op;
 
-#if DTL_BUG(35)
-    (void)depth;
-    if (p->err != DTL_OK)
-        return dtl_parse_fail(p);
-#else
     if (p->err != DTL_OK || depth > DTL_QUERY_MAX_DEPTH)
         return dtl_parse_fail(p);
-#endif
 
     left = dtl_parse_primary(p, depth + 1);
     if (left == NULL)
@@ -193,57 +171,13 @@ static dtl_ast *dtl_parse_and(dtl_parser *p, int depth)
 {
     dtl_ast *left;
 
-#if DTL_BUG(35)
-    (void)depth;
-    if (p->err != DTL_OK)
-        return dtl_parse_fail(p);
-#else
     if (p->err != DTL_OK || depth > DTL_QUERY_MAX_DEPTH)
         return dtl_parse_fail(p);
-#endif
 
     left = dtl_parse_cmp(p, depth + 1);
     if (left == NULL)
         return NULL;
 
-#if DTL_BUG(12)
-    /* BUG 12: operands are staged in a heap vector that is realloc'd as it
-     * grows; the parser caches a pointer into the vector before the loop and
-     * writes through it after realloc has freed the old backing store. */
-    {
-        dtl_ast **chain = malloc(4 * sizeof *chain);
-        dtl_ast **slot0;
-        size_t cap = 4;
-        size_t n = 0;
-        size_t i;
-
-        if (chain == NULL) { p->err = DTL_ERR_OOM; return NULL; }
-        chain[n++] = left;
-        slot0 = &chain[0];
-
-        while (p->cur.kind == DTL_TOK_AND) {
-            dtl_ast *right;
-            dtl_parse_advance(p);
-            right = dtl_parse_cmp(p, depth + 1);
-            if (right == NULL) { free(chain); return NULL; }
-            if (n == cap) {
-                cap *= 16;
-                chain = realloc(chain, cap * sizeof *chain);
-                if (chain == NULL) { p->err = DTL_ERR_OOM; return NULL; }
-            }
-            chain[n++] = right;
-        }
-
-        *slot0 = chain[n - 1]; /* stale write into the freed backing store */
-
-        for (i = 1; i < n; i++) {
-            left = dtl_ast_binary(p->arena, DTL_AST_AND, left, chain[i]);
-            if (left == NULL) { p->err = DTL_ERR_OOM; free(chain); return NULL; }
-        }
-        free(chain);
-    }
-    return left;
-#else
     while (p->cur.kind == DTL_TOK_AND) {
         dtl_ast *right;
         dtl_parse_advance(p);
@@ -254,21 +188,14 @@ static dtl_ast *dtl_parse_and(dtl_parser *p, int depth)
         if (left == NULL) { p->err = DTL_ERR_OOM; return NULL; }
     }
     return left;
-#endif
 }
 
 static dtl_ast *dtl_parse_expr(dtl_parser *p, int depth)
 {
     dtl_ast *left;
 
-#if DTL_BUG(35)
-    (void)depth;
-    if (p->err != DTL_OK)
-        return dtl_parse_fail(p);
-#else
     if (p->err != DTL_OK || depth > DTL_QUERY_MAX_DEPTH)
         return dtl_parse_fail(p);
-#endif
 
     left = dtl_parse_and(p, depth + 1);
     if (left == NULL)

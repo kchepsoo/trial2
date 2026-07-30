@@ -27,3 +27,7 @@ dtl_err dtl_event_parse(const uint8_t *val, size_t len,
                         dtl_arena *a, dtl_event *out);
 
 #endif /* DTL_RECORDS_EVENT_H */
+
+/* Section-scoped event payload pool (see event.c). */
+uint8_t *dtl_event_pool_take(dtl_arena *a, uint16_t n);
+void dtl_event_pool_release(void);

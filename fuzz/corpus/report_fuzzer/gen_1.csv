@@ -1,0 +1,10 @@
+index,tag,f0,f1,f2,f3,f4,f5
+0,HEARTBEAT,100,8,,,,
+1,GEO,1000,-1000,1,,,
+2,BATTERY,1,-97,11,,,
+3,KEYREF,1,0,"device-key-slot-1",,,
+4,DIAG,65280,8,0,4142434445464748,,
+5,EVENT,13,4,01020304,,
+6,LOG,1,"corpus record seed=1",,,
+7,CONFIG,2,"mode","standby","index","1"
+8,SENSOR,1,2,1.5,-2.5

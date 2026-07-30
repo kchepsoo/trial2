@@ -1,5 +1,4 @@
 #include "core/hexdump.h"
-#include "defects.h"
 
 #define DTL_HEXDUMP_COLS 16u
 
@@ -48,15 +47,7 @@ void dtl_hexdump(FILE *out, const uint8_t *data, size_t len)
 
         line[p++] = ' ';
         line[p++] = '|';
-#if DTL_BUG(16)
-        /* BUG 16: the ASCII gutter loop runs one column past
-         * DTL_HEXDUMP_COLS. On a full row it writes a 17th printable char,
-         * so the closing '|' and '\n' land past the end of the line
-         * buffer. */
-        for (col = 0; col <= DTL_HEXDUMP_COLS; col++) {
-#else
         for (col = 0; col < DTL_HEXDUMP_COLS; col++) {
-#endif
             idx = row + col;
             if (idx < len)
                 line[p++] = dtl_hexdump_printable(data[idx]);

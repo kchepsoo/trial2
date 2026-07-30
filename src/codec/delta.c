@@ -1,6 +1,5 @@
 #include "codec/delta.h"
 
-#include "defects.h"
 
 #include "core/endian.h"
 
@@ -120,12 +119,6 @@ dtl_err dtl_delta_decode(const uint8_t *in, size_t in_len,
         prev = cur;
     }
 
-#if DTL_BUG(25)
-    /* BUG 25: report the full output capacity even when the decode stopped
-     * short, so the caller walks a tail that was never written. */
-    *out_len = out_cap;
-#else
     *out_len = o;
-#endif
     return DTL_OK;
 }

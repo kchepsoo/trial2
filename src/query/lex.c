@@ -1,6 +1,5 @@
 #include "query/lex.h"
 
-#include "defects.h"
 
 static int dtl_lex_is_space(char c)
 {
@@ -67,12 +66,8 @@ static dtl_err dtl_lex_string(dtl_lexer *lx, dtl_token *out)
 
     for (;;) {
         char c = s[lx->pos];
-#if !DTL_BUG(11)
         if (c == '\0')
             return DTL_ERR_BADQUERY; /* unterminated */
-#endif
-        /* BUG 11: with the NUL check removed, an unterminated string scans
-         * past the end of the query buffer looking for a closing quote. */
         if (c == '"') {
             out->kind = DTL_TOK_STR;
             out->s = s + start;

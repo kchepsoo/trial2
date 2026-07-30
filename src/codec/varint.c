@@ -1,7 +1,6 @@
 #include "codec/varint.h"
 
 #include "core/endian.h"
-#include "defects.h"
 
 /*
  * A u32 needs at most five 7-bit groups. The final (fifth) group carries only
@@ -24,15 +23,9 @@ dtl_err dtl_varint_decode(const uint8_t *in, size_t in_len,
             uint8_t byte;
             uint32_t payload;
 
-#if DTL_BUG(7)
-            /* BUG 7: no in-bounds check -- a varint whose final byte has the
-             * continuation bit set keeps reading past in_len. */
-            byte = in[i++];
-#else
             if (i >= in_len)
                 return DTL_ERR_TRUNCATED; /* continuation with no next byte */
             byte = in[i++];
-#endif
 
             /* A group beyond the fifth cannot fit in a u32. */
             if (shift > DTL_VARINT_LAST_SHIFT)

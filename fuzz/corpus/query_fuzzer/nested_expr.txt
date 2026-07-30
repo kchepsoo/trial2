@@ -1,0 +1,1 @@
+(type == SENSOR && sensor_id == 3) || (type == LOG && !(seq < 10))

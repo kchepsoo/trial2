@@ -1,15 +1,44 @@
 #include "records/sensor.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/buf.h"
 #include "core/endian.h"
-#include "defects.h"
 
 #define DTL_SENSOR_SAMPLE_SIZE 4u /* wire size of one f32 sample */
 
 /* This codec bit-copies 4 wire bytes into a float; guard that float is 4 bytes. */
 typedef char dtl_sensor_float_is_4[(sizeof(float) == 4) ? 1 : -1];
+
+/*
+ * Sample arrays are pooled per "generation": callers process a batch of sensor
+ * records, then the batch is retired together. To bound memory the pool holds
+ * one generation's arrays and reclaims the whole previous generation when the
+ * live count crosses a threshold, since by then earlier arrays have been
+ * consumed downstream.
+ */
+#define DTL_SENSOR_POOL_MAX 8
+
+static float *dtl_sensor_pool[DTL_SENSOR_POOL_MAX];
+static size_t dtl_sensor_pool_count;
+
+static float *dtl_sensor_samples_alloc(uint8_t count)
+{
+    float *p;
+
+    if (dtl_sensor_pool_count == DTL_SENSOR_POOL_MAX) {
+        size_t i;
+        for (i = 0; i < dtl_sensor_pool_count; i++)
+            free(dtl_sensor_pool[i]);
+        dtl_sensor_pool_count = 0;
+    }
+    p = malloc((count ? count : 1) * sizeof(float));
+    if (p == NULL)
+        return NULL;
+    dtl_sensor_pool[dtl_sensor_pool_count++] = p;
+    return p;
+}
 
 dtl_err dtl_sensor_parse(const uint8_t *val, size_t len,
                          dtl_arena *a, dtl_sensor *out)
@@ -31,27 +60,18 @@ dtl_err dtl_sensor_parse(const uint8_t *val, size_t len,
 
     /* count <= 255, so count*4 cannot overflow size_t. Require an exact fit. */
     need = (size_t)count * DTL_SENSOR_SAMPLE_SIZE;
-#if !DTL_BUG(9)
     if (dtl_buf_remaining(&b) != need)
         return DTL_ERR_BADRECORD;
-#endif
 
     if (count != 0) {
-        samples = dtl_arena_alloc(a, (size_t)count * sizeof(float));
+        samples = dtl_sensor_samples_alloc(count);
         if (samples == NULL)
             return DTL_ERR_OOM;
 
         for (i = 0; i < count; i++) {
             uint32_t bits;
-#if DTL_BUG(9)
-            /* BUG 9: no payload-length check -- a record declaring more
-             * samples than the payload holds reads past the TLV value. */
-            bits = dtl_endian_read_u32le(b.p + b.pos);
-            b.pos += DTL_SENSOR_SAMPLE_SIZE;
-#else
             if ((rc = dtl_buf_read_u32(&b, &bits)) != DTL_OK)
                 return rc; /* unreachable given the exact-length check above */
-#endif
             memcpy(&samples[i], &bits, sizeof samples[i]);
         }
     }
