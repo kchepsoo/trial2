@@ -1,0 +1,36 @@
+﻿# Build tree
+build/
+
+# Object files and static archives
+*.o
+*.a
+
+# Throwaway smoke binaries
+dtl_smoke
+dtl_smoke_asan
+dtl_smoke_msan
+dtl_format_smoke
+dtl_format_smoke_asan
+dtl_format_smoke_msan
+dtl_codec_smoke
+dtl_codec_smoke_asan
+dtl_codec_smoke_msan
+dtl_records_smoke
+dtl_records_smoke_asan
+dtl_records_smoke_msan
+dtl_writer_smoke
+dtl_writer_smoke_asan
+dtl_writer_smoke_msan
+dtl_cli_smoke
+dtl_cli_smoke_asan
+dtl_cli_smoke_msan
+
+# The real dtl executables
+dtl_asan
+dtl_msan
+dtl_crypto_smoke
+dtl_crypto_smoke_asan
+dtl_crypto_smoke_msan
+dtl_query_smoke
+dtl_query_smoke_asan
+dtl_query_smoke_msan
